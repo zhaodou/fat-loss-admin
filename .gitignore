@@ -1,0 +1,10 @@
+node_modules/
+dist/
+data/
+shots/
+.chrome-profile/
+.cp2/
+.env
+.env.local
+*.log
+.DS_Store

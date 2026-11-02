@@ -1,0 +1,56 @@
+2026/11/02-10:05:13.888 9a8134 Creating DB /Users/mjd/WorkBuddy/2026-10-20-16-48-54/fat-loss-admin/.scratch/cdp-profile/Default/IndexedDB/https_docs.qq.com_0.indexeddb.leveldb since it was missing.
+2026/11/02-10:05:13.891 9a8134 Reusing MANIFEST /Users/mjd/WorkBuddy/2026-10-20-16-48-54/fat-loss-admin/.scratch/cdp-profile/Default/IndexedDB/https_docs.qq.com_0.indexeddb.leveldb/MANIFEST-000001
+2026/11/02-10:05:14.484 9a8139 Level-0 table #5: started
+2026/11/02-10:05:14.485 9a8139 Level-0 table #5: 2284 bytes OK
+2026/11/02-10:05:14.488 9a8139 Delete type=0 #3
+2026/11/02-10:05:14.488 9a8144 Manual compaction at level-0 from '\x00\x04\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x05\x00\x00\x00' @ 0 : 0; will stop at (end)
+2026/11/02-10:05:14.489 9a8139 Manual compaction at level-0 from '\x00\x03\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x04\x00\x00\x00' @ 0 : 0; will stop at (end)
+2026/11/02-10:05:14.489 9a8139 Manual compaction at level-1 from '\x00\x03\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x04\x00\x00\x00' @ 0 : 0; will stop at (end)
+2026/11/02-10:05:15.954 9a8144 Manual compaction at level-0 from '\x00\x08\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x09\x00\x00\x00' @ 0 : 0; will stop at (end)
+2026/11/02-10:05:15.956 9a8139 Level-0 table #7: started
+2026/11/02-10:05:15.960 9a8139 Level-0 table #7: 157440 bytes OK
+2026/11/02-10:05:15.962 9a8139 Delete type=0 #4
+2026/11/02-10:05:15.963 9a8134 Manual compaction at level-0 from '\x00\x09\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x0a\x00\x00\x00' @ 0 : 0; will stop at (end)
+2026/11/02-10:05:16.444 9a8135 Compacting 1@1 + 1@2 files
+2026/11/02-10:05:16.451 9a8135 Generated table #8@1: 1680 keys, 77694 bytes
+2026/11/02-10:05:16.451 9a8135 Compacted 1@1 + 1@2 files => 77694 bytes
+2026/11/02-10:05:16.453 9a8135 compacted to: files[ 0 0 1 0 0 0 0 ]
+2026/11/02-10:05:16.453 9a8135 Delete type=2 #7
+2026/11/02-10:05:16.453 9a8135 Delete type=2 #5
+2026/11/02-10:05:46.968 9a8135 Level-0 table #10: started
+2026/11/02-10:05:46.988 9a8135 Level-0 table #10: 1125244 bytes OK
+2026/11/02-10:05:46.990 9a8135 Delete type=0 #6
+2026/11/02-10:06:09.084 9a8135 Compacting 1@1 + 1@2 files
+2026/11/02-10:06:09.104 9a8135 Generated table #11@1: 9679 keys, 529133 bytes
+2026/11/02-10:06:09.104 9a8135 Compacted 1@1 + 1@2 files => 529133 bytes
+2026/11/02-10:06:09.109 9a8135 compacted to: files[ 0 0 1 0 0 0 0 ]
+2026/11/02-10:09:52.912 9a8135 Level-0 table #13: started
+2026/11/02-10:09:52.930 9a8135 Level-0 table #13: 1119862 bytes OK
+2026/11/02-10:09:52.943 9a8135 Delete type=2 #10
+2026/11/02-10:09:52.943 9a8135 Delete type=2 #8
+2026/11/02-10:09:52.943 9a8135 Delete type=0 #9
+2026/11/02-10:09:57.361 9a8139 Compacting 1@1 + 1@2 files
+2026/11/02-10:09:57.394 9a8139 Generated table #14@1: 18518 keys, 1112324 bytes
+2026/11/02-10:09:57.394 9a8139 Compacted 1@1 + 1@2 files => 1112324 bytes
+2026/11/02-10:09:57.403 9a8139 compacted to: files[ 0 0 1 0 0 0 0 ]
+2026/11/02-10:09:57.403 9a8139 Delete type=2 #13
+2026/11/02-10:09:57.403 9a8139 Delete type=2 #11
+2026/11/02-10:21:17.903 9a8139 Level-0 table #16: started
+2026/11/02-10:21:17.923 9a8139 Level-0 table #16: 1102479 bytes OK
+2026/11/02-10:21:17.925 9a8139 Delete type=0 #12
+2026/11/02-10:21:19.708 9a8139 Compacting 1@1 + 1@2 files
+2026/11/02-10:21:19.737 9a8139 Generated table #17@1: 27449 keys, 1682933 bytes
+2026/11/02-10:21:19.737 9a8139 Compacted 1@1 + 1@2 files => 1682933 bytes
+2026/11/02-10:21:19.739 9a8139 compacted to: files[ 0 0 1 0 0 0 0 ]
+2026/11/02-10:21:19.739 9a8139 Delete type=2 #14
+2026/11/02-10:21:19.739 9a8139 Delete type=2 #16
+2026/11/02-10:24:34.182 9a8139 Level-0 table #19: started
+2026/11/02-10:24:34.202 9a8139 Level-0 table #19: 1104575 bytes OK
+2026/11/02-10:24:34.204 9a8139 Delete type=0 #15
+2026/11/02-10:24:47.718 9a8139 Compacting 1@1 + 1@2 files
+2026/11/02-10:24:47.758 9a8139 Generated table #20@1: 31306 keys, 2161762 bytes
+2026/11/02-10:24:47.763 9a8139 Generated table #21@1: 4929 keys, 94400 bytes
+2026/11/02-10:24:47.763 9a8139 Compacted 1@1 + 1@2 files => 2256162 bytes
+2026/11/02-10:24:47.777 9a8139 compacted to: files[ 0 0 2 0 0 0 0 ]
+2026/11/02-10:24:47.777 9a8139 Delete type=2 #17
+2026/11/02-10:24:47.777 9a8139 Delete type=2 #19
