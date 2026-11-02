@@ -8,4 +8,4 @@ shots/
 .env.local
 *.log
 .DS_Store
-.scratch
+.scratch/
