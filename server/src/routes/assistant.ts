@@ -43,6 +43,7 @@ assistantRouter.get('/assistant/config', (_req, res) => {
     source: cfg.source,
     ready: cfg.ready,
     missing: cfg.missing,
+    visionModel: getSettings().ai.visionModel ?? '',
     presets: LLM_PRESETS,
   })
 })
@@ -71,6 +72,8 @@ assistantRouter.put(
       apiKey,
       temperature: Math.min(1.5, Math.max(0, num(b.temperature, current.temperature ?? 0.4))),
       tone: ['strict', 'encouraging', 'neutral'].includes(str(b.tone)) ? (b.tone as AssistantSettings['tone']) : current.tone,
+      // 视觉模型：AI 饮食热量分析用，可留空（留空则用主模型尝试，失败降级纯文字）
+      visionModel: isDemo ? '' : str(b.visionModel, current.visionModel ?? '').trim(),
     }
     saveSettings({ ai: next })
     const cfg = resolveLlm()

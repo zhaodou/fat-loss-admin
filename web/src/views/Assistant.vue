@@ -247,6 +247,12 @@
             <div v-if="!currentPresetModels.length" class="tiny muted">这个服务商需要你手填模型名</div>
           </div>
 
+          <div class="cfg-field">
+            <label>视觉模型（可选）</label>
+            <el-input v-model="form.visionModel" placeholder="例如：glm-4v-flash（免费），留空则用主模型" />
+            <div class="tiny muted">用于「每日饮食」的照片热量分析；填多模态模型（如智谱 glm-4v-flash，同一个 Key），留空时用主模型识别、失败自动退回纯文字分析</div>
+          </div>
+
           <div v-if="needKey" class="cfg-field">
             <label>API Key</label>
             <el-input
@@ -654,6 +660,7 @@ const form = reactive({
   provider: 'deepseek',
   endpoint: '',
   model: '',
+  visionModel: '',
   apiKey: '',
   temperature: 0.4,
   tone: 'encouraging',
@@ -672,6 +679,7 @@ function openConfig() {
     form.provider = c.provider
     form.endpoint = c.endpoint
     form.model = c.model
+    form.visionModel = c.visionModel ?? ''
     form.apiKey = ''
     form.temperature = c.temperature
     form.tone = c.tone

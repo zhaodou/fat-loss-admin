@@ -12,6 +12,7 @@ import { nutritionRouter } from './routes/nutrition'
 import { workoutRouter } from './routes/workout'
 import { insightsRouter } from './routes/insights'
 import { assistantRouter } from './routes/assistant'
+import { analysisRouter } from './routes/analysis'
 import { authRouter } from './routes/auth'
 
 initSchema()
@@ -51,6 +52,7 @@ app.use('/api', nutritionRouter)
 app.use('/api', workoutRouter)
 app.use('/api', insightsRouter)
 app.use('/api', assistantRouter)
+app.use('/api', analysisRouter)
 
 // 生产模式：如果前端已构建，直接由同一个端口托管
 const distDir = path.join(ROOT_DIR, 'web', 'dist')

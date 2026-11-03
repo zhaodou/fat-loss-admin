@@ -92,6 +92,8 @@ export interface AssistantConfig {
   source: 'env' | 'settings'
   ready: boolean
   missing: string[]
+  /** 视觉模型（可选）：AI 饮食热量分析用，留空则用主模型尝试 */
+  visionModel?: string
   presets: LlmPreset[]
 }
 
@@ -569,6 +571,41 @@ export interface NutritionEstimate {
   advice: string[]
   mealKcalTarget: number
   matchedCount: number
+}
+
+/* --------------------------- AI 饮食热量分析 --------------------------- */
+
+/** AI 识别出的单个食物（weight/calories 可在结果表中编辑） */
+export interface AnalysisFoodItem {
+  name: string
+  /** 估算重量（g） */
+  weight: number
+  unit: string
+  /** 本项热量（kcal） */
+  calories: number
+  /** 每 100g 热量（kcal） */
+  caloriesPer100g: number
+  /** 置信度 0-1 */
+  confidence: number
+  /** 估算依据 / 备注 */
+  remark: string
+  protein?: number
+  carb?: number
+  fat?: number
+  fiber?: number
+}
+
+export interface MealAnalysisResult {
+  foods: AnalysisFoodItem[]
+  totalCalories: number
+  analysisSummary: string
+  /** 不确定因素（如用油量无法判断） */
+  uncertainties: string[]
+  /** 图文冲突提示 */
+  conflictWarnings?: string[]
+  /** vision-model=图片+文字 / text-only=纯文字（图片未参与）/ demo=演示数据 */
+  engine?: 'vision-model' | 'text-only' | 'demo'
+  model?: string
 }
 
 /** 助手「自动记录一餐」的结果（与后端 executeRecordMeal 对齐） */

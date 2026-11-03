@@ -14,7 +14,13 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 12 
 
 /* --------------------------------- 饮食记录 ------------------------------- */
 
-function computeEntry(foodId: number | null, amount: number, fallback: any) {
+/**
+ * 计算一条记录的营养值。
+ * - 有 food_id：按食物库的每100g营养 × 新重量重算；
+ * - 没有 food_id（如 AI 分析记录）：按「原营养 × 新重量 / 原重量」等比缩放，
+ *   保证用户改重量后热量和三大营养素同步变化，而不是沿用旧值。
+ */
+function computeEntry(foodId: number | null, amount: number, fallback: any, prevAmount?: number) {
   if (foodId) {
     const food = db.prepare('SELECT * FROM foods WHERE id = ?').get(foodId) as any
     if (food) {
@@ -30,14 +36,17 @@ function computeEntry(foodId: number | null, amount: number, fallback: any) {
       }
     }
   }
+  const from = num(prevAmount ?? fallback.amount_g)
+  const ratio = from > 0 && amount > 0 ? amount / from : 1
+  const scale1 = (v: unknown) => Math.round(num(v) * ratio * 10) / 10
   return {
     food_name: str(fallback.food_name, '自定义食物'),
     food_kind: 'ingredient',
-    kcal: num(fallback.kcal),
-    protein: num(fallback.protein),
-    carb: num(fallback.carb),
-    fat: num(fallback.fat),
-    fiber: num(fallback.fiber),
+    kcal: Math.round(num(fallback.kcal) * ratio),
+    protein: scale1(fallback.protein),
+    carb: scale1(fallback.carb),
+    fat: scale1(fallback.fat),
+    fiber: scale1(fallback.fiber),
   }
 }
 
@@ -163,7 +172,7 @@ dietRouter.put(
     const b = req.body ?? {}
     const amount = num(b.amount_g, row.amount_g)
     const mealType = (MEAL_TYPES as readonly string[]).includes(b.meal_type) ? b.meal_type : row.meal_type
-    const calc = computeEntry(optionalNum(b.food_id) ?? row.food_id, amount, { ...row, ...b })
+    const calc = computeEntry(optionalNum(b.food_id) ?? row.food_id, amount, { ...row, ...b }, row.amount_g)
     db.prepare('UPDATE diet_entries SET meal_type = ?, amount_g = ?, food_name = ?, kcal = ?, protein = ?, carb = ?, fat = ?, fiber = ? WHERE id = ?').run(
       mealType,
       amount,
@@ -175,7 +184,7 @@ dietRouter.put(
       calc.fiber,
       id,
     )
-    res.json({ ok: true })
+    res.json({ ok: true, entry: { id, meal_type: mealType, amount_g: amount, ...calc } })
   }),
 )
 

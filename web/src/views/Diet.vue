@@ -88,8 +88,7 @@
             </div>
             <div class="meal-head-right">
               <span class="num meal-total">{{ meal.subtotal.kcal }}<i> kcal</i></span>
-              <el-button :icon="Edit" circle size="small" :disabled="!meal.items.length" title="整体编辑这餐" @click="openEditMeal(meal)" />
-              <el-button :icon="Plus" circle size="small" type="primary" @click="openCalc(meal.type)" />
+              <el-button :icon="Plus" circle size="small" type="primary" title="AI 拍照 / 描述分析这一餐" @click="openAnalysis(meal.type)" />
             </div>
           </div>
 
@@ -113,165 +112,180 @@
                 <span class="tiny muted">小计 蛋白 {{ meal.subtotal.protein }}g · 碳水 {{ meal.subtotal.carb }}g · 脂肪 {{ meal.subtotal.fat }}g</span>
               </div>
             </div>
-            <EmptyState v-else icon="🍽️" title="还没有记录" description="点右上角 + 号，用一句话描述你吃了什么" />
+            <EmptyState v-else icon="📸" title="还没有记录" description="点右上角 + 号，上传饮食照片或描述吃了什么，AI 帮你算热量" />
 
             <div v-if="meal.photos.length" class="photos">
-              <el-image
-                v-for="p in meal.photos"
-                :key="p.id"
-                :src="p.url"
-                :preview-src-list="[p.url]"
-                fit="cover"
-                class="photo"
-                :class="{ masked: store.settings?.privacy.maskPhotos }"
-              />
+              <div v-for="p in meal.photos" :key="p.id" class="photo-wrap">
+                <el-image
+                  :src="p.url"
+                  :preview-src-list="meal.photos.map((x) => x.url)"
+                  fit="cover"
+                  class="photo"
+                  :class="{ masked: store.settings?.privacy.maskPhotos }"
+                />
+                <el-button
+                  class="photo-del"
+                  :icon="Close"
+                  circle
+                  size="small"
+                  type="danger"
+                  title="删除这张照片"
+                  @click="removePhoto(p)"
+                />
+              </div>
             </div>
           </div>
         </div>
       </div>
     </template>
 
-    <!-- 描述 → 计算 → 记录 / 整餐编辑 -->
-    <el-dialog v-model="calcOpen" :title="editingMeal ? `整体编辑${MEAL_META[calcMeal].label}` : `记录${MEAL_META[calcMeal].label}`" width="760" :close-on-click-modal="false">
-      <div class="calc">
-        <div class="calc-input">
+    <!-- AI 饮食热量分析 -->
+    <el-dialog v-model="anaOpen" :title="`AI 饮食热量分析 · ${MEAL_META[anaMeal].label}`" width="760" :close-on-click-modal="false" class="analysis-dialog">
+      <div class="ana">
+        <div class="ana-input">
           <div class="row-between mb-6">
-            <span class="tiny">用一句话描述这餐吃了什么</span>
-            <el-radio-group v-model="calcMeal" size="small">
+            <span class="tiny">餐次</span>
+            <el-radio-group v-model="anaMeal" size="small" :disabled="analyzing || saving">
               <el-radio-button v-for="m in MEALS" :key="m.type" :value="m.type">{{ m.label }}</el-radio-button>
             </el-radio-group>
           </div>
+
+          <div class="tiny ana-label">饮食照片（可选，最多 5 张，支持 JPG / PNG / WEBP）</div>
+          <el-upload
+            v-model:file-list="uploadList"
+            drag
+            multiple
+            list-type="picture-card"
+            accept=".jpg,.jpeg,.png,.webp"
+            :limit="5"
+            :disabled="analyzing || saving"
+            :before-upload="beforeUpload"
+            :http-request="doUpload"
+            :on-remove="onRemoveFile"
+            :on-exceed="onExceed"
+            :on-preview="onPreview"
+            class="ana-upload"
+          >
+            <div class="upload-trigger">
+              <el-icon class="upload-icon"><Plus /></el-icon>
+              <div class="tiny">点击或拖拽上传</div>
+              <div class="tiny muted">最多 5 张 · 单张 ≤ 10MB</div>
+            </div>
+          </el-upload>
+
+          <div class="tiny ana-label mt-8">文字描述（可选）</div>
           <el-input
-            v-model="desc"
+            v-model="anaDesc"
             type="textarea"
             :autosize="{ minRows: 3, maxRows: 6 }"
             resize="none"
-            placeholder="例如：300g西红柿,100g大米饭，100g的鸡腿"
+            placeholder="请描述本次饮食，例如：一碗米饭、两个鸡腿、一份西兰花，也可以补充食物重量、烹饪方式等信息。"
+            :disabled="analyzing || saving"
           />
-          <div class="example-row">
-            <span class="tiny muted">示例：</span>
-            <button v-for="ex in examples" :key="ex" class="ex-chip" @click="desc = ex">{{ ex }}</button>
-          </div>
-          <el-button type="primary" class="w-full mt-8" :loading="estimating" :disabled="!desc.trim()" @click="onCalculate">
-            计算营养
-          </el-button>
-          <div class="tiny muted mt-6 source-note">
-            营养数据来自 Open Food Facts 开源食物库（常见食材取本地权威值），均为估算
-          </div>
-        </div>
-
-        <div v-if="estimate" class="calc-result">
-          <div class="result-head">共匹配 {{ estimate.matchedCount }} 项 · 本餐建议约 {{ estimate.mealKcalTarget }} kcal</div>
-
-          <div class="totals">
-            <div class="total-card" v-for="t in totalCards" :key="t.label">
-              <div class="total-val num">{{ t.value }}<i>{{ t.unit }}</i></div>
-              <div class="total-label">{{ t.label }}</div>
-            </div>
-          </div>
-
-          <el-table :data="resolvedItems" size="small" class="result-table">
-            <el-table-column prop="name" label="食物" min-width="100" />
-            <el-table-column label="份量(g)" width="92" align="right">
-              <template #default="{ row }">
-                <el-input-number v-if="row.source === 'manual' || row.source === 'ai'" v-model="row.grams" :min="1" :max="2000" :step="10" size="small" controls-position="right" class="cell-num" @change="recalcDebounced" />
-                <span v-else class="num">{{ row.grams }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="热量" width="86" align="right">
-              <template #default="{ row }">
-                <el-input-number v-if="row.source === 'manual' || row.source === 'ai'" v-model="row.kcal" :min="0" :max="2000" :step="1" size="small" controls-position="right" class="cell-num" @change="recalcDebounced" />
-                <span v-else class="num">{{ row.kcal }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="蛋白" width="86" align="right">
-              <template #default="{ row }">
-                <el-input-number v-if="row.source === 'manual' || row.source === 'ai'" v-model="row.protein" :min="0" :max="500" :step="0.5" size="small" controls-position="right" class="cell-num" @change="recalcDebounced" />
-                <span v-else class="num">{{ row.protein }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="脂肪" width="86" align="right">
-              <template #default="{ row }">
-                <el-input-number v-if="row.source === 'manual' || row.source === 'ai'" v-model="row.fat" :min="0" :max="500" :step="0.5" size="small" controls-position="right" class="cell-num" @change="recalcDebounced" />
-                <span v-else class="num">{{ row.fat }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="碳水" width="86" align="right">
-              <template #default="{ row }">
-                <el-input-number v-if="row.source === 'manual' || row.source === 'ai'" v-model="row.carb" :min="0" :max="500" :step="0.5" size="small" controls-position="right" class="cell-num" @change="recalcDebounced" />
-                <span v-else class="num">{{ row.carb }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="纤维" width="86" align="right">
-              <template #default="{ row }">
-                <el-input-number v-if="row.source === 'manual' || row.source === 'ai'" v-model="row.fiber" :min="0" :max="200" :step="0.1" size="small" controls-position="right" class="cell-num" @change="recalcDebounced" />
-                <span v-else class="num">{{ row.fiber }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="来源" width="92">
-              <template #default="{ row }">
-                <el-tag v-if="row.source === 'openfoodfacts'" size="small" type="success" effect="plain">开源接口</el-tag>
-                <el-tag v-else-if="row.source === 'local'" size="small" type="info" effect="plain">本地库</el-tag>
-                <el-tag v-else-if="row.source === 'ai'" size="small" effect="plain">AI 分析</el-tag>
-                <el-tag v-else-if="row.source === 'manual'" size="small" type="warning" effect="plain">手动</el-tag>
-                <el-tag v-else size="small" type="danger" effect="plain">未匹配</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="操作" width="60" align="center">
-              <template #default="{ row }">
-                <el-button :icon="Delete" link size="small" type="danger" title="删除这一项" @click="removeCalcItem(estimate.items.indexOf(row))" />
-              </template>
-            </el-table-column>
-          </el-table>
-
-          <!-- 未匹配 → 手动补充 -->
-          <div v-if="unmatchedItems.length" class="manual-supp">
-            <div class="manual-head">
-              <span class="tiny">有 <b>{{ unmatchedItems.length }}</b> 项没匹配到，手动补充营养后实时重算</span>
-              <el-button size="small" type="primary" plain :disabled="!hasManualKcal" @click="adoptAll">全部采用</el-button>
-            </div>
-            <div v-for="(it, idx) in unmatchedItems" :key="'u' + idx" class="manual-row">
-              <div class="manual-row-top">
-                <span class="manual-name">{{ it.name }}</span>
-                <span class="manual-grams">
-                  <el-input-number v-model="it.grams" :min="1" :max="2000" :step="10" size="small" controls-position="right" class="cell-num" @change="recalcDebounced" />
-                  <span class="tiny muted">g</span>
-                </span>
-                <el-button size="small" type="success" plain :disabled="it.kcal <= 0" @click="adopt(it)">采用</el-button>
-              </div>
-              <div class="manual-grid">
-                <div class="mg-cell"><span>热量</span><el-input-number v-model="it.kcal" :min="0" :max="2000" :step="1" size="small" controls-position="right" class="cell-num" @change="recalcDebounced" /></div>
-                <div class="mg-cell"><span>蛋白</span><el-input-number v-model="it.protein" :min="0" :max="500" :step="0.5" size="small" controls-position="right" class="cell-num" @change="recalcDebounced" /></div>
-                <div class="mg-cell"><span>脂肪</span><el-input-number v-model="it.fat" :min="0" :max="500" :step="0.5" size="small" controls-position="right" class="cell-num" @change="recalcDebounced" /></div>
-                <div class="mg-cell"><span>碳水</span><el-input-number v-model="it.carb" :min="0" :max="500" :step="0.5" size="small" controls-position="right" class="cell-num" @change="recalcDebounced" /></div>
-                <div class="mg-cell"><span>纤维</span><el-input-number v-model="it.fiber" :min="0" :max="200" :step="0.1" size="small" controls-position="right" class="cell-num" @change="recalcDebounced" /></div>
-              </div>
-            </div>
-          </div>
-
-          <div class="advice">
-            <div class="advice-title"><el-icon><InfoFilled /></el-icon> 饮食建议</div>
-            <ul class="advice-list">
-              <li v-for="(a, i) in estimate.advice" :key="i">{{ a }}</li>
-            </ul>
-          </div>
 
           <el-button
             type="primary"
             class="w-full mt-8"
-            :loading="saving"
-            :disabled="!estimate.matchedCount"
-            @click="onConfirm"
+            :loading="analyzing"
+            :disabled="!canAnalyze"
+            @click="onAnalyze"
           >
-            {{ editingMeal ? `保存整餐替换（${estimate.matchedCount} 项）` : `确认记录这餐（${estimate.matchedCount} 项）` }}
+            {{ analyzing ? 'AI 正在分析…' : '热量分析' }}
           </el-button>
-          <div v-if="!estimate.matchedCount" class="tiny muted mt-6">没有可记录的食物，换个更通用的说法再试，例如「鸡腿」「米饭」「西红柿」。</div>
+          <div class="tiny muted mt-6 source-note">
+            图片与描述至少填写一项；你描述的食物重量将优先于图片估算。分析由后端模型完成，图片与描述会一并发送给所配置的 AI。
+          </div>
+        </div>
+
+        <!-- 分析结果 -->
+        <div v-if="anaResult" class="ana-result">
+          <div class="result-banner">
+            <div>
+              <div class="tiny muted">本次饮食总热量</div>
+              <div class="big-num num">{{ resultTotal }}<span class="unit">kcal</span></div>
+            </div>
+            <div class="tiny muted engine-note">
+              识别 {{ anaResult.foods.length }} 项食物 · {{ engineLabel }}
+            </div>
+          </div>
+
+          <el-table :data="anaResult.foods" size="small" class="result-table">
+            <el-table-column label="食物名称" min-width="120">
+              <template #default="{ row }">
+                <el-input v-model="row.name" size="small" />
+              </template>
+            </el-table-column>
+            <el-table-column label="估算重量" width="130" align="right">
+              <template #default="{ row }">
+                <div class="cell-weight">
+                  <el-input-number v-model="row.weight" :min="1" :max="5000" :step="10" size="small" controls-position="right" class="cell-num" @change="onWeightChange(row)" />
+                  <span class="tiny muted">g</span>
+                </div>
+              </template>
+            </el-table-column>
+            <el-table-column label="热量" width="132" align="right">
+              <template #default="{ row }">
+                <div class="cell-weight">
+                  <el-input-number v-model="row.calories" :min="0" :max="5000" :step="5" size="small" controls-position="right" class="cell-num" @change="onCaloriesChange(row)" />
+                  <span class="tiny muted">kcal</span>
+                </div>
+                <div v-if="row.caloriesPer100g > 0" class="cell-basis">每100g约 {{ row.caloriesPer100g }} kcal，改重量按此重算</div>
+              </template>
+            </el-table-column>
+            <el-table-column label="置信度" width="76" align="center">
+              <template #default="{ row }">
+                <el-tag size="small" effect="plain" :type="row.confidence >= 0.85 ? 'success' : row.confidence >= 0.6 ? 'warning' : 'danger'">
+                  {{ Math.round(row.confidence * 100) }}%
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="备注" min-width="130" prop="remark">
+              <template #default="{ row }">
+                <span class="tiny muted">{{ row.remark || '—' }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="56" align="center">
+              <template #default="{ $index }">
+                <el-button :icon="Delete" link size="small" type="danger" title="删除这一项" @click="removeFood($index)" />
+              </template>
+            </el-table-column>
+          </el-table>
+
+          <div v-if="anaResult.conflictWarnings?.length" class="conflict-box">
+            <div class="conflict-title">⚠ 图片与描述存在冲突</div>
+            <ul>
+              <li v-for="(w, i) in anaResult.conflictWarnings" :key="'c' + i">{{ w }}</li>
+            </ul>
+          </div>
+
+          <div class="ai-notes">
+            <div class="notes-title">AI 分析说明</div>
+            <p class="notes-body">{{ anaResult.analysisSummary }}</p>
+            <template v-if="anaResult.uncertainties.length">
+              <div class="notes-title">不确定因素</div>
+              <ul class="notes-list">
+                <li v-for="(u, i) in anaResult.uncertainties" :key="'u' + i">{{ u }}</li>
+              </ul>
+            </template>
+          </div>
+
+          <div class="row gap-8 mt-8">
+            <el-button plain :loading="analyzing" :disabled="saving" @click="onAnalyze">重新分析</el-button>
+            <el-button type="primary" class="flex-1" :loading="saving" :disabled="!anaResult.foods.length" @click="onSave">
+              保存到{{ MEAL_META[anaMeal].label }}（{{ resultTotal }} kcal）
+            </el-button>
+          </div>
         </div>
       </div>
     </el-dialog>
 
+    <!-- 图片预览 -->
+    <el-dialog v-model="previewOpen" title="图片预览" width="520">
+      <img v-if="previewUrl" :src="previewUrl" class="preview-img" />
+    </el-dialog>
+
     <!-- 编辑 -->
-    <el-dialog v-model="editOpen" title="修改记录" width="420">
+    <el-dialog v-model="editOpen" title="修改记录" width="460">
       <el-form label-width="70px" label-position="left">
         <el-form-item label="食物">{{ editing?.food_name }}</el-form-item>
         <el-form-item label="份量">
@@ -283,6 +297,17 @@
             <el-option v-for="m in MEALS" :key="m.type" :label="m.label" :value="m.type" />
           </el-select>
         </el-form-item>
+        <el-form-item v-if="editPreview" label="重算后">
+          <div class="edit-preview">
+            <div>
+              热量 <b>{{ editing?.kcal }}</b> → <b class="tone-good">{{ editPreview.kcal }}</b> kcal
+            </div>
+            <div class="tiny muted">
+              蛋白 {{ editing?.protein }} → {{ editPreview.protein }}g · 碳水 {{ editing?.carb }} → {{ editPreview.carb }}g · 脂肪
+              {{ editing?.fat }} → {{ editPreview.fat }}g
+            </div>
+          </div>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="editOpen = false">取消</el-button>
@@ -293,14 +318,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, ArrowRight, CopyDocument, Delete, Edit, InfoFilled, Plus } from '@element-plus/icons-vue'
+import type { UploadFile, UploadRawFile, UploadRequestOptions, UploadUserFile } from 'element-plus'
+import { ArrowLeft, ArrowRight, Close, CopyDocument, Delete, Edit, Plus } from '@element-plus/icons-vue'
 import { api } from '@/api'
 import { useAppStore } from '@/stores/app'
 import { localDate, MEAL_META, n, relativeDay, shift, weekday } from '@/utils/format'
-import type { DietDay, DietEntry, MealType, NutritionEstimate, NutritionEstimateItem } from '@/types/api'
+import type { DietDay, DietEntry, AnalysisFoodItem, MealAnalysisResult, MealType } from '@/types/api'
 
 const store = useAppStore()
 const route = useRoute()
@@ -316,133 +342,148 @@ const MEALS = [
   { type: 'snack' as MealType, label: '加餐' },
 ]
 
-const examples = ['300g西红柿,100g大米饭，100g的鸡腿', '2个鸡蛋 + 1片全麦面包 + 一杯牛奶', '150g鸡胸肉，200g米饭，100g西兰花']
+/* --------------------------- AI 饮食热量分析 --------------------------- */
 
-/* 计算弹窗 */
-const calcOpen = ref(false)
-const calcMeal = ref<MealType>('lunch')
-/** 编辑模式：非 null 表示正在整体编辑该餐次（确认时整餐替换，而非追加） */
-const editingMeal = ref<MealType | null>(null)
-const desc = ref('')
-const estimating = ref(false)
+const anaOpen = ref(false)
+const anaMeal = ref<MealType>('lunch')
+const anaDesc = ref('')
+const uploadList = ref<UploadUserFile[]>([])
+/** uid → 服务器图片地址（上传成功后记录，删除时同步移除） */
+const urlMap = reactive(new Map<number, string>())
+const analyzing = ref(false)
 const saving = ref(false)
-const estimate = ref<NutritionEstimate | null>(null)
+const anaResult = ref<MealAnalysisResult | null>(null)
+const previewOpen = ref(false)
+const previewUrl = ref('')
 
-const totalCards = computed(() => {
-  const t = estimate.value?.totals
-  if (!t) return []
-  return [
-    { label: '总热量', value: t.kcal, unit: 'kcal' },
-    { label: '蛋白质', value: t.protein, unit: 'g' },
-    { label: '脂肪', value: t.fat, unit: 'g' },
-    { label: '碳水', value: t.carb, unit: 'g' },
-    { label: '膳食纤维', value: t.fiber, unit: 'g' },
-  ]
+const ACCEPTED_MIME = ['image/jpeg', 'image/png', 'image/webp']
+
+/** 已成功上传的图片地址 */
+const uploadedUrls = computed(() =>
+  uploadList.value
+    .filter((f) => f.status === 'success' && f.uid !== undefined && urlMap.get(f.uid) !== undefined)
+    .map((f) => urlMap.get(f.uid!)!),
+)
+/** 还有图片在上传中 */
+const uploading = computed(() => uploadList.value.some((f) => f.status === 'uploading'))
+/** 图片 / 描述至少一项 + 没有正在上传的图片 */
+const canAnalyze = computed(() => !analyzing.value && !saving.value && !uploading.value && (anaDesc.value.trim().length > 0 || uploadedUrls.value.length > 0))
+
+/** 总热量 = 各项之和（用户编辑名称/重量/热量后自动重算） */
+const resultTotal = computed(() => Math.round((anaResult.value?.foods ?? []).reduce((a, f) => a + (Number(f.calories) || 0), 0)))
+
+const engineLabel = computed(() => {
+  const e = anaResult.value?.engine
+  const m = anaResult.value?.model
+  if (e === 'vision-model') return `视觉模型 ${m ?? ''}（图片 + 描述）`
+  if (e === 'text-only') return '纯文字分析（照片未参与）'
+  if (e === 'demo') return '演示模式（本地估算）'
+  return m || ''
 })
 
-function openCalc(meal: MealType) {
-  calcMeal.value = meal
-  editingMeal.value = null
-  calcOpen.value = true
-  estimate.value = null
-  desc.value = ''
+function openAnalysis(meal: MealType) {
+  anaMeal.value = meal
+  anaOpen.value = true
+  anaDesc.value = ''
+  uploadList.value = []
+  urlMap.clear()
+  anaResult.value = null
 }
 
-/** 整体编辑某餐：预填该餐的原始描述，自动重算，确认后整餐替换 */
-function openEditMeal(meal: { type: MealType; raw_text: string; items: DietEntry[] }) {
-  calcMeal.value = meal.type
-  editingMeal.value = meal.type
-  calcOpen.value = true
-  estimate.value = null
-  desc.value = meal.raw_text || meal.items.map((i) => `${i.amount_g}g${i.food_name}`).join(',')
-  if (desc.value.trim()) onCalculate()
+function beforeUpload(file: UploadRawFile): boolean {
+  if (!ACCEPTED_MIME.includes(file.type)) {
+    ElMessage.error('仅支持 JPG / PNG / WEBP 格式的图片')
+    return false
+  }
+  if (file.size > 10 * 1024 * 1024) {
+    ElMessage.error('单张图片不能超过 10MB')
+    return false
+  }
+  return true
 }
 
-async function onCalculate() {
-  if (!desc.value.trim()) return
-  estimating.value = true
+/** 自定义上传：逐张调用图片上传接口（与分析分离），成功后记录服务器地址 */
+async function doUpload(options: UploadRequestOptions) {
   try {
-    estimate.value = await api.estimateDiet({ text: desc.value, mealType: calcMeal.value })
-  } finally {
-    estimating.value = false
+    const res = await api.uploadAnalysisImages([options.file as File])
+    const uploadFile = uploadList.value.find((f) => f.raw === options.file)
+    if (uploadFile && uploadFile.uid !== undefined) urlMap.set(uploadFile.uid, res.urls[0] ?? '')
+    options.onSuccess(res)
+  } catch (err: any) {
+    const msg = err?.message || '图片上传失败'
+    options.onError(Object.assign(new Error(msg), { status: 0, method: 'POST', url: '' }) as any)
   }
 }
 
-/* 未匹配食物的「手动补充 → 重新计算」 */
-const resolvedItems = computed(() => estimate.value?.items.filter((i) => i.matched) ?? [])
-const unmatchedItems = computed(() => estimate.value?.items.filter((i) => i.source === 'none') ?? [])
-const hasManualKcal = computed(() => unmatchedItems.value.some((i) => i.kcal > 0))
-
-let recalcTimer: ReturnType<typeof setTimeout> | null = null
-function recalcDebounced() {
-  if (recalcTimer) clearTimeout(recalcTimer)
-  recalcTimer = setTimeout(() => recalc(), 400)
+function onRemoveFile(file: UploadFile) {
+  urlMap.delete(file.uid)
 }
 
-/** 重新计算：只回写 totals/advice/matchedCount，保留 items 数组本体，避免输入框失焦 */
-async function recalc() {
-  if (!estimate.value) return
-  try {
-    const res = await api.recalculateEstimate({ items: estimate.value.items, mealType: calcMeal.value })
-    estimate.value.totals = res.totals
-    estimate.value.advice = res.advice
-    estimate.value.mealKcalTarget = res.mealKcalTarget
-    estimate.value.matchedCount = res.matchedCount
-  } catch {
-    /* 错误提示已由拦截器处理 */
+function onExceed() {
+  ElMessage.warning('最多上传 5 张图片')
+}
+
+function onPreview(file: UploadFile) {
+  previewUrl.value = file.url || ''
+  previewOpen.value = true
+}
+
+async function onAnalyze() {
+  if (!canAnalyze.value) {
+    if (uploading.value) ElMessage.warning('还有图片正在上传，请稍候')
+    else ElMessage.warning('请至少上传一张饮食照片或填写文字描述')
+    return
   }
-}
-
-/** 采用一条手填食物：标为已匹配 + 来源 manual，并触发重算 */
-function adopt(it: NutritionEstimateItem) {
-  it.matched = true
-  it.source = 'manual'
-  recalc()
-}
-
-/** 一键采用所有已填热量的未匹配食物 */
-function adoptAll() {
-  unmatchedItems.value.forEach((it) => {
-    if (it.kcal > 0) {
-      it.matched = true
-      it.source = 'manual'
+  analyzing.value = true
+  anaResult.value = null
+  try {
+    anaResult.value = await api.analyzeMeal({
+      mealType: anaMeal.value,
+      description: anaDesc.value.trim(),
+      imageUrls: uploadedUrls.value,
+    })
+    if (anaResult.value.engine === 'text-only') {
+      ElMessage.warning('照片未能参与分析，本次结果仅基于文字描述')
     }
-  })
-  recalc()
+  } catch {
+    /* 错误提示已由拦截器处理，可修改后重新分析 */
+  } finally {
+    analyzing.value = false
+  }
 }
 
-async function onConfirm() {
-  if (!estimate.value) return
-  const matched = estimate.value.items.filter((i) => i.matched)
-  if (!matched.length) return
+/** 删除识别错误的某一项（编辑重量/名称后总热量自动重算） */
+function removeFood(index: number) {
+  anaResult.value?.foods.splice(index, 1)
+}
+
+/** 修改重量后按「每100g热量 × 新重量」重新估算该项热量，总热量随之自动更新 */
+function onWeightChange(row: AnalysisFoodItem) {
+  if (row.caloriesPer100g > 0 && row.weight > 0) {
+    row.calories = Math.round((row.caloriesPer100g * row.weight) / 100)
+  }
+}
+
+/** 手动修改热量后，反推每100g热量（保留1位小数），保证后续改重量时估算基准一致 */
+function onCaloriesChange(row: AnalysisFoodItem) {
+  if (row.weight > 0) {
+    row.caloriesPer100g = Math.round((row.calories / row.weight) * 1000) / 10
+  }
+}
+
+async function onSave() {
+  if (!anaResult.value?.foods.length) return
   saving.value = true
   try {
-    const targetMeal = editingMeal.value ?? calcMeal.value
-    const payload = {
+    await api.saveMealAnalysis({
       date: date.value,
-      meal_type: targetMeal,
-      raw_text: desc.value,
-      items: matched.map((it) => ({
-        meal_type: targetMeal,
-        food_name: it.name,
-        amount_g: it.grams,
-        kcal: it.kcal,
-        protein: it.protein,
-        carb: it.carb,
-        fat: it.fat,
-        fiber: it.fiber,
-        source: it.source,
-      })),
-    }
-    if (editingMeal.value) {
-      await api.replaceDietMeal(payload)
-      ElMessage.success(`已整体替换${MEAL_META[editingMeal.value].label}`)
-    } else {
-      await api.addDietEntries(payload)
-      ElMessage.success(`已记录 ${matched.length} 项到${MEAL_META[calcMeal.value].label}`)
-    }
-    calcOpen.value = false
-    editingMeal.value = null
+      mealType: anaMeal.value,
+      description: anaDesc.value.trim(),
+      imageUrls: uploadedUrls.value,
+      analysis: anaResult.value,
+    })
+    ElMessage.success(`已记录 ${anaResult.value.foods.length} 项到${MEAL_META[anaMeal.value].label}（${resultTotal.value} kcal）`)
+    anaOpen.value = false
     await load()
     store.touch()
   } finally {
@@ -450,7 +491,8 @@ async function onConfirm() {
   }
 }
 
-/* 编辑 / 删除 */
+/* ------------------------------ 编辑 / 删除 ------------------------------ */
+
 const editOpen = ref(false)
 const editing = ref<DietEntry | null>(null)
 const editAmount = ref(100)
@@ -463,11 +505,40 @@ function openEdit(item: DietEntry) {
   editOpen.value = true
 }
 
+/** 改动重量后的营养预览：热量/宏量按「新重量 ÷ 原重量」等比缩放（与后端一致） */
+const editPreview = computed(() => {
+  const item = editing.value
+  if (!item || !item.amount_g || item.amount_g <= 0) return null
+  const ratio = editAmount.value / item.amount_g
+  if (!Number.isFinite(ratio) || ratio <= 0) return null
+  const scale1 = (v: number) => Math.round(v * ratio * 10) / 10
+  const kcal = Math.round(item.kcal * ratio)
+  if (kcal === item.kcal) return null
+  return { kcal, protein: scale1(item.protein), carb: scale1(item.carb), fat: scale1(item.fat) }
+})
+
 async function saveEdit() {
   if (!editing.value) return
-  await api.updateDietEntry(editing.value.id, { amount_g: editAmount.value, meal_type: editMeal.value })
+  const res = await api.updateDietEntry(editing.value.id, { amount_g: editAmount.value, meal_type: editMeal.value })
   editOpen.value = false
-  ElMessage.success('已更新')
+  ElMessage.success(res.entry ? `已更新：${res.entry.amount_g}g · ${res.entry.kcal} kcal（按新重量重算）` : '已更新')
+  await load()
+  store.touch()
+}
+
+/** 删除某餐中的一张饮食照片（同时删除服务器磁盘文件，不影响该餐已记录的食物） */
+async function removePhoto(p: { id: number }) {
+  try {
+    await ElMessageBox.confirm(
+      '确定删除这张饮食照片吗？\n（仅移除照片，该餐已记录的食物不受影响）',
+      '删除照片',
+      { type: 'warning' },
+    )
+  } catch {
+    return
+  }
+  await api.deletePhoto(p.id)
+  ElMessage.success('已删除照片')
   await load()
   store.touch()
 }
@@ -488,14 +559,8 @@ async function removeEntry(item: DietEntry) {
   store.touch()
 }
 
-/** 整体编辑弹窗里移除某一项：只从本次编辑列表删除，保存时整餐替换即生效，其余食物不影响 */
-function removeCalcItem(index: number) {
-  if (!estimate.value || index < 0) return
-  estimate.value.items.splice(index, 1)
-  recalc()
-}
+/* --------------------------------- 汇总 --------------------------------- */
 
-/* 汇总 */
 const proteinTarget = computed(() => Math.round((store.profile?.weight_kg ?? 60) * (store.settings?.energy.proteinPerKg ?? 1.6)))
 const fatTarget = computed(() => Math.round(((day.value?.target.intake ?? 1500) * 0.28) / 9))
 const carbTarget = computed(() => {
@@ -521,7 +586,8 @@ function pctOf(kcal: number): number {
   return Math.round((kcal / total) * 100)
 }
 
-/* 日期 */
+/* --------------------------------- 日期 --------------------------------- */
+
 async function load() {
   day.value = await api.dietDay(date.value)
 }
@@ -745,18 +811,42 @@ onMounted(async () => {
   display: flex;
   gap: 8px;
   margin-top: 10px;
+  flex-wrap: wrap;
+}
+.photo-wrap {
+  position: relative;
 }
 .photo {
   width: 58px;
   height: 58px;
   border-radius: 10px;
+  display: block;
 }
 .photo.masked {
   filter: blur(8px);
 }
+.photo-del {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  opacity: 0;
+  transform: scale(0.85);
+  transition: opacity 0.15s, transform 0.15s;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+}
+.photo-del :deep(.el-icon) {
+  font-size: 12px;
+}
+.photo-wrap:hover .photo-del {
+  opacity: 1;
+  transform: scale(1);
+}
 
-/* 计算弹窗 */
-.calc {
+/* AI 分析弹窗 */
+.ana {
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -769,154 +859,75 @@ onMounted(async () => {
 .mb-6 {
   margin-bottom: 6px;
 }
-.example-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 8px;
-}
-.ex-chip {
-  font-size: 11.5px;
-  padding: 3px 9px;
-  border-radius: 7px;
-  border: 1px solid var(--line);
-  background: #fff;
+.ana-label {
+  font-weight: 600;
   color: var(--ink-700);
-  cursor: pointer;
+  margin-bottom: 6px;
 }
-.ex-chip:hover {
-  border-color: var(--brand);
-  color: var(--brand-dark);
-  background: var(--brand-soft);
+.ana-upload :deep(.el-upload-list--picture-card .el-upload-list__item) {
+  width: 88px;
+  height: 88px;
+}
+.ana-upload :deep(.el-upload--picture-card) {
+  width: 88px;
+  height: 88px;
+  overflow: hidden;
+}
+/* drag 模式下 EP 会把 .el-upload-dragger 塞进卡片里，其默认 padding 40px 10px 且无高度限制，
+   会从 88px 卡片中溢出压住下方表单，必须一并约束尺寸 */
+.ana-upload :deep(.el-upload-dragger) {
+  width: 88px;
+  height: 88px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+}
+.upload-trigger {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+.upload-trigger .tiny {
+  font-size: 11px;
+  line-height: 1.4;
+}
+.upload-icon {
+  font-size: 20px;
+  color: var(--ink-400);
 }
 .source-note {
   text-align: center;
 }
-.calc-result {
+.ana-result {
   border-top: 1px dashed var(--line);
   padding-top: 14px;
 }
-.result-head {
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--ink-700);
-  margin-bottom: 10px;
-}
-.totals {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 8px;
-  margin-bottom: 12px;
-}
-.total-card {
+.result-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   background: var(--brand-soft);
   border: 1px solid #cfeee2;
-  border-radius: 10px;
-  padding: 10px 6px;
-  text-align: center;
+  border-radius: 12px;
+  padding: 12px 16px;
+  margin-bottom: 12px;
 }
-.total-val {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--brand-dark);
-}
-.total-val i {
-  font-style: normal;
-  font-size: 10px;
-  color: var(--ink-400);
-  font-weight: 400;
-  margin-left: 2px;
-}
-.total-label {
-  font-size: 11px;
-  color: var(--ink-500);
-  margin-top: 2px;
+.engine-note {
+  text-align: right;
 }
 .result-table {
   margin-bottom: 12px;
 }
-.advice {
-  background: #f7faf9;
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--brand);
-  border-radius: 10px;
-  padding: 10px 12px;
-}
-.advice-title {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 12.5px;
-  font-weight: 650;
-  color: var(--brand-dark);
-  margin-bottom: 6px;
-}
-.advice-list {
-  margin: 0;
-  padding-left: 18px;
-}
-.advice-list li {
-  font-size: 12.5px;
-  line-height: 1.8;
-  color: var(--ink-700);
-}
-
-/* 手动补充未匹配食物 */
-.manual-supp {
-  margin: 4px 0 12px;
-  border: 1px dashed #f0c69c;
-  background: #fffaf2;
-  border-radius: 10px;
-  padding: 10px 12px;
-}
-.manual-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-  color: var(--ink-700);
-}
-.manual-head b {
-  color: #e08a2b;
-}
-.manual-row {
-  border-top: 1px dashed #f3d6b4;
-  padding: 8px 0;
-}
-.manual-row:first-of-type {
-  border-top: none;
-}
-.manual-row-top {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 6px;
-}
-.manual-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ink-900);
-}
-.manual-grams {
+.cell-weight {
   display: flex;
   align-items: center;
   gap: 4px;
-  margin-left: auto;
-}
-.manual-grid {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 8px;
-}
-.mg-cell {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-.mg-cell > span {
-  font-size: 11px;
-  color: var(--ink-500);
+  justify-content: flex-end;
 }
 .cell-num {
   width: 100%;
@@ -928,5 +939,87 @@ onMounted(async () => {
 .cell-num :deep(.el-input__inner) {
   text-align: right;
   padding-right: 8px;
+}
+.cell-basis {
+  font-size: 11px;
+  color: var(--ink-400);
+  text-align: right;
+  margin-top: 2px;
+  line-height: 1.4;
+}
+.conflict-box {
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+.conflict-title {
+  font-size: 12.5px;
+  font-weight: 650;
+  color: #c2410c;
+  margin-bottom: 4px;
+}
+.conflict-box ul {
+  margin: 0;
+  padding-left: 18px;
+}
+.conflict-box li {
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: #9a3412;
+}
+.ai-notes {
+  background: #f7faf9;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--brand);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.notes-title {
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--brand-dark);
+  margin-bottom: 4px;
+}
+.notes-body {
+  margin: 0 0 6px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--ink-700);
+}
+.notes-list {
+  margin: 0;
+  padding-left: 18px;
+}
+.notes-list li {
+  font-size: 12.5px;
+  line-height: 1.8;
+  color: var(--ink-700);
+}
+.preview-img {
+  width: 100%;
+  border-radius: 10px;
+}
+.edit-preview {
+  line-height: 1.6;
+}
+.edit-preview b {
+  font-weight: 650;
+}
+</style>
+
+<style>
+/* 弹窗整体限高：内容超出时仅 body 区滚动，底部按钮始终可见（选择器须用全局样式，scoped 不生效） */
+.analysis-dialog.el-dialog {
+  margin: 6vh auto;
+  max-height: 84vh;
+  display: flex;
+  flex-direction: column;
+}
+.analysis-dialog .el-dialog__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 </style>

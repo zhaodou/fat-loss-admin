@@ -14,6 +14,7 @@ import type {
   EnergyAnalysis,
   Exercise,
   LoginResult,
+  MealAnalysisResult,
   NutritionEstimate,
   NutritionEstimateItem,
   Plan,
@@ -78,8 +79,8 @@ const get = async <T>(url: string, params?: Record<string, unknown>): Promise<T>
   const { data } = await http.get(url, { params })
   return data as T
 }
-const post = async <T>(url: string, body?: unknown): Promise<T> => {
-  const { data } = await http.post(url, body)
+const post = async <T>(url: string, body?: unknown, config?: { timeout?: number }): Promise<T> => {
+  const { data } = await http.post(url, body, config)
   return data as T
 }
 const put = async <T>(url: string, body?: unknown): Promise<T> => {
@@ -111,13 +112,33 @@ export const api = {
   /* 饮食 */
   dietDay: (date: string) => get<DietDay>('/diet/day', { date }),
   estimateDiet: (body: { text: string; mealType?: string }) => post<NutritionEstimate>('/nutrition/estimate', body),
+
+  /* AI 饮食热量分析 */
+  uploadAnalysisImages: (files: File[]) => {
+    const form = new FormData()
+    files.forEach((f) => form.append('files', f))
+    return http
+      .post<{ ok: boolean; urls: string[] }>('/diet/analysis/images', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      .then((r) => r.data)
+  },
+  // AI 分析较慢（视觉模型 + 失败重试 + 覆盖校验重试），单独放宽超时到 120s
+  analyzeMeal: (body: { mealType?: string; description: string; imageUrls: string[] }) =>
+    post<MealAnalysisResult>('/diet/analysis', body, { timeout: 120_000 }),
+  saveMealAnalysis: (body: { date: string; mealType: string; description: string; imageUrls: string[]; analysis: MealAnalysisResult }) =>
+    post<{ ok: boolean; count: number; images: number }>('/diet/analysis/save', body),
   recalculateEstimate: (body: { items: NutritionEstimateItem[]; mealType?: string }) =>
     post<NutritionEstimate>('/nutrition/recalculate', body),
   addDietEntries: (body: unknown) => post<{ ok: boolean; ids: number[] }>('/diet/entries', body),
   replaceDietMeal: (body: { date: string; meal_type: string; raw_text?: string; items: unknown[] }) =>
     put<{ ok: boolean; ids: number[]; count: number }>('/diet/meal', body),
   deleteDietEntries: (body: { ids: number[] }) => post<{ ok: boolean; deleted: number }>('/diet/entries/delete', body),
-  updateDietEntry: (id: number, body: unknown) => put<{ ok: boolean }>(`/diet/entries/${id}`, body),
+  updateDietEntry: (id: number, body: unknown) =>
+    put<{ ok: boolean; entry?: { id: number; amount_g: number; kcal: number; protein: number; carb: number; fat: number } }>(
+      `/diet/entries/${id}`,
+      body,
+    ),
   deleteDietEntry: (id: number) => del<{ ok: boolean }>(`/diet/entries/${id}`),
   clearDay: (date: string, meal?: string) => del<{ ok: boolean }>('/diet/day', meal ? { date, meal_type: meal } : { date }),
   copyDay: (from: string, to: string) => post<{ ok: boolean; copied: number }>('/diet/copy', { from, to }),

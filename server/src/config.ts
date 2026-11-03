@@ -98,6 +98,12 @@ export interface AssistantSettings {
   apiKey: string
   temperature: number
   tone: 'strict' | 'encouraging' | 'neutral'
+  /**
+   * 视觉模型（可选）：用于「AI 饮食热量分析」里识别饮食照片。
+   * 留空 = 用主模型尝试（主模型需支持图片），识别失败自动降级为纯文字分析。
+   * 例：智谱可填 glm-4v-flash（免费），复用同一个 API Key。
+   */
+  visionModel?: string
 }
 
 export interface AppSettings {
@@ -119,6 +125,7 @@ export const defaultSettings: AppSettings = {
     apiKey: '',
     temperature: 0.4,
     tone: 'encouraging',
+    visionModel: '',
   },
   demoSeeded: false,
 }
